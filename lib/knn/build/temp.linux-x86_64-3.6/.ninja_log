@@ -1,0 +1,6 @@
+# ninja log v5
+0	8350	1634735561428489751	/home/r/Dense_ori/DenseFusion-1/lib/knn/build/temp.linux-x86_64-3.6/home/r/Dense_ori/DenseFusion-1/lib/knn/src/cpu/knn_cpu.o	a77d567ae9a558c7
+0	11319	1634735564396633408	/home/r/Dense_ori/DenseFusion-1/lib/knn/build/temp.linux-x86_64-3.6/home/r/Dense_ori/DenseFusion-1/lib/knn/src/vision.o	2370adf6c8854d14
+1	350	1634737966725002755	/home/r/Dense_ori/DenseFusion-1/lib/knn/build/temp.linux-x86_64-3.6/home/r/Dense_ori/DenseFusion-1/lib/knn/src/cuda/knn.o	6265833145c20d6b
+1	7627	1634737974000542035	/home/r/Dense_ori/DenseFusion-1/lib/knn/build/temp.linux-x86_64-3.6/home/r/Dense_ori/DenseFusion-1/lib/knn/src/cpu/knn_cpu.o	1a9aee45c8e1b6a6
+1	10722	1634737977092347848	/home/r/Dense_ori/DenseFusion-1/lib/knn/build/temp.linux-x86_64-3.6/home/r/Dense_ori/DenseFusion-1/lib/knn/src/vision.o	2c4136e0d00007da
