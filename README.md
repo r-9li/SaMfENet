@@ -6,7 +6,7 @@ This repository is the official implementation code of the SaMfENet
 ## How to begin
 
 ```
-conda env create -f conda_env.ymal
+conda env create -f conda_env.yaml
 # build knn
 pip install opencv-python scipy pyyaml
 cd lib/knn
