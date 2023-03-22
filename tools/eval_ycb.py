@@ -1,3 +1,11 @@
+# 导入
+import os
+import sys
+
+# Root directory of the project
+os.chdir(sys.path[0])
+ROOT_DIR = os.path.abspath("../")
+sys.path.append(ROOT_DIR)  # To find local version of the library
 import _init_paths
 import argparse
 import os
@@ -21,13 +29,14 @@ import torchvision.utils as vutils
 import torch.nn.functional as F
 from torch.autograd import Variable
 from datasets.ycb.dataset import PoseDataset
-from lib.network import PoseNet, PoseRefineNet
+from lib.network_resUNet_edge_pointp_vlad_se import PoseNet, PoseRefineNet
 from lib.transformations import euler_matrix, quaternion_matrix, quaternion_from_matrix
+import cv2
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset_root', type=str, default = '', help='dataset root dir')
-parser.add_argument('--model', type=str, default = '',  help='resume PoseNet model')
-parser.add_argument('--refine_model', type=str, default = '',  help='resume PoseRefineNet model')
+parser.add_argument('--dataset_root', type=str, default='', help='dataset root dir')
+parser.add_argument('--model', type=str, default='', help='resume PoseNet model')
+parser.add_argument('--refine_model', type=str, default=None, help='resume PoseRefineNet model')
 opt = parser.parse_args()
 
 norm = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -50,6 +59,7 @@ dataset_config_dir = '/home/r/Dense_ori/DenseFusion-2/datasets/ycb/dataset_confi
 ycb_toolbox_dir = '/home/r/Dense_ori/DenseFusion-2/experiments/scripts/YCB_Video_toolbox'
 result_wo_refine_dir = '/home/r/Dense_ori/DenseFusion-2/experiments/eval_result/ycb/Densefusion_wo_refine_result'
 result_refine_dir = '/home/r/Dense_ori/DenseFusion-2/experiments/eval_result/ycb/Densefusion_iterative_result'
+
 
 def get_bbox(posecnn_rois):
     rmin = int(posecnn_rois[idx][3]) + 1
@@ -89,15 +99,17 @@ def get_bbox(posecnn_rois):
         cmin -= delt
     return rmin, rmax, cmin, cmax
 
-estimator = PoseNet(num_points = num_points, num_obj = num_obj)
+
+estimator = PoseNet(num_points=num_points, num_obj=num_obj)
 estimator.cuda()
 estimator.load_state_dict(torch.load(opt.model))
 estimator.eval()
 
-refiner = PoseRefineNet(num_points = num_points, num_obj = num_obj)
-refiner.cuda()
-refiner.load_state_dict(torch.load(opt.refine_model))
-refiner.eval()
+if opt.refine_model is not None:
+    refiner = PoseRefineNet(num_points=num_points, num_obj=num_obj)
+    refiner.cuda()
+    refiner.load_state_dict(torch.load(opt.refine_model))
+    refiner.eval()
 
 testlist = []
 input_file = open('{0}/test_data_list.txt'.format(dataset_config_dir))
@@ -143,7 +155,7 @@ for now in range(0, 2949):
     lst = posecnn_rois[:, 1:2].flatten()
     my_result_wo_refine = []
     my_result = []
-    
+
     for idx in range(len(lst)):
         itemid = lst[idx]
         try:
@@ -189,7 +201,7 @@ for now in range(0, 2949):
             cloud = cloud.view(1, num_points, 3)
             img_masked = img_masked.view(1, 3, img_masked.size()[1], img_masked.size()[2])
 
-            pred_r, pred_t, pred_c, emb = estimator(img_masked, cloud, choose, index)
+            pred_r, pred_t, pred_c, emb, pred_edge = estimator(img_masked, cloud, choose, index)
             pred_r = pred_r / torch.norm(pred_r, dim=2).view(1, num_points, 1)
 
             pred_c = pred_c.view(bs, num_points)
@@ -202,31 +214,36 @@ for now in range(0, 2949):
             my_pred = np.append(my_r, my_t)
             my_result_wo_refine.append(my_pred.tolist())
 
-            for ite in range(0, iteration):
-                T = Variable(torch.from_numpy(my_t.astype(np.float32))).cuda().view(1, 3).repeat(num_points, 1).contiguous().view(1, num_points, 3)
-                my_mat = quaternion_matrix(my_r)
-                R = Variable(torch.from_numpy(my_mat[:3, :3].astype(np.float32))).cuda().view(1, 3, 3)
-                my_mat[0:3, 3] = my_t
-                
-                new_cloud = torch.bmm((cloud - T), R).contiguous()
-                pred_r, pred_t = refiner(new_cloud, emb, index)
-                pred_r = pred_r.view(1, 1, -1)
-                pred_r = pred_r / (torch.norm(pred_r, dim=2).view(1, 1, 1))
-                my_r_2 = pred_r.view(-1).cpu().data.numpy()
-                my_t_2 = pred_t.view(-1).cpu().data.numpy()
-                my_mat_2 = quaternion_matrix(my_r_2)
+            if opt.refine_model is not None:
+                for ite in range(0, iteration):
+                    T = Variable(torch.from_numpy(my_t.astype(np.float32))).cuda().view(1, 3).repeat(num_points,
+                                                                                                     1).contiguous().view(
+                        1,
+                        num_points,
+                        3)
+                    my_mat = quaternion_matrix(my_r)
+                    R = Variable(torch.from_numpy(my_mat[:3, :3].astype(np.float32))).cuda().view(1, 3, 3)
+                    my_mat[0:3, 3] = my_t
 
-                my_mat_2[0:3, 3] = my_t_2
+                    new_cloud = torch.bmm((cloud - T), R).contiguous()
+                    pred_r, pred_t = refiner(new_cloud, emb, index)
+                    pred_r = pred_r.view(1, 1, -1)
+                    pred_r = pred_r / (torch.norm(pred_r, dim=2).view(1, 1, 1))
+                    my_r_2 = pred_r.view(-1).cpu().data.numpy()
+                    my_t_2 = pred_t.view(-1).cpu().data.numpy()
+                    my_mat_2 = quaternion_matrix(my_r_2)
 
-                my_mat_final = np.dot(my_mat, my_mat_2)
-                my_r_final = copy.deepcopy(my_mat_final)
-                my_r_final[0:3, 3] = 0
-                my_r_final = quaternion_from_matrix(my_r_final, True)
-                my_t_final = np.array([my_mat_final[0][3], my_mat_final[1][3], my_mat_final[2][3]])
+                    my_mat_2[0:3, 3] = my_t_2
 
-                my_pred = np.append(my_r_final, my_t_final)
-                my_r = my_r_final
-                my_t = my_t_final
+                    my_mat_final = np.dot(my_mat, my_mat_2)
+                    my_r_final = copy.deepcopy(my_mat_final)
+                    my_r_final[0:3, 3] = 0
+                    my_r_final = quaternion_from_matrix(my_r_final, True)
+                    my_t_final = np.array([my_mat_final[0][3], my_mat_final[1][3], my_mat_final[2][3]])
+
+                    my_pred = np.append(my_r_final, my_t_final)
+                    my_r = my_r_final
+                    my_t = my_t_final
 
             # Here 'my_pred' is the final pose estimation result after refinement ('my_r': quaternion, 'my_t': translation)
 
@@ -237,6 +254,8 @@ for now in range(0, 2949):
             my_result_wo_refine.append([0.0 for i in range(7)])
             my_result.append([0.0 for i in range(7)])
 
-    scio.savemat('{0}/{1}.mat'.format(result_wo_refine_dir, '%04d' % now), {'poses':my_result_wo_refine})
-    scio.savemat('{0}/{1}.mat'.format(result_refine_dir, '%04d' % now), {'poses':my_result})
+    scio.savemat('{0}/{1}.mat'.format(result_wo_refine_dir, '%04d' % now),
+                 {'poses': my_result_wo_refine})
+    scio.savemat('{0}/{1}.mat'.format(result_refine_dir, '%04d' % now),
+                 {'poses': my_result})
     print("Finish No.{0} keyframe".format(now))

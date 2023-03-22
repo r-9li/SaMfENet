@@ -1,3 +1,11 @@
+# 导入
+import os
+import sys
+
+# Root directory of the project
+os.chdir(sys.path[0])
+ROOT_DIR = os.path.abspath("../")
+sys.path.append(ROOT_DIR)  # To find local version of the library
 import _init_paths
 import argparse
 import os
@@ -15,33 +23,8 @@ import torchvision.datasets as dset
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
 from torch.autograd import Variable
-from datasets.linemod.dataset import PoseDataset as PoseDataset_linemod
-
-choose_net = 8  # 0-vanilla 1-trans 2-trans_pointp 3-trans_pointp_se 4-pointp 5-connecttrans 6-eff 7-eff_pointp
-# 8-eff_pointp_vlad_se 9-kmeans
-# 10-eff_pointp_vlad_kmeans_se
-if choose_net == 0:
-    from lib.network import PoseNet, PoseRefineNet
-elif choose_net == 1:
-    from lib.network_trans import PoseNet, PoseRefineNet
-elif choose_net == 2:
-    from lib.network_trans_pointp import PoseNet, PoseRefineNet
-elif choose_net == 3:
-    from lib.network_trans_pointp_se import PoseNet, PoseRefineNet
-elif choose_net == 4:
-    from lib.network_pointp import PoseNet, PoseRefineNet
-elif choose_net == 5:
-    from lib.network_connecttrans import PoseNet, PoseRefineNet
-elif choose_net == 6:
-    from lib.network_eff import PoseNet, PoseRefineNet
-elif choose_net == 7:
-    from lib.network_eff_pointp import PoseNet, PoseRefineNet
-elif choose_net == 8:
-    from lib.network_eff_pointp_vlad_se import PoseNet, PoseRefineNet
-elif choose_net == 9:
-    from lib.network_kmeans import PoseNet, PoseRefineNet
-elif choose_net == 10:
-    from lib.network_eff_pointp_vlad_kmeans_se import PoseNet, PoseRefineNet
+from datasets.linemod.dataset1 import PoseDataset as PoseDataset_linemod
+from lib.network_resUNet_edge_pointp_vlad_se import PoseNet, PoseRefineNet
 from lib.loss import Loss
 from lib.loss_refiner import Loss_refine
 from lib.transformations import euler_matrix, quaternion_matrix, quaternion_from_matrix
@@ -56,10 +39,10 @@ opt = parser.parse_args()
 num_objects = 13
 objlist = [1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]
 num_points = 1000
-iteration = 4
+iteration = 3
 bs = 1
-dataset_config_dir = 'datasets/linemod/dataset_config'
-output_result_dir = 'experiments/eval_result/linemod'
+dataset_config_dir = '/home/r/Dense_ori/DenseFusion-2/datasets/linemod/dataset_config'
+output_result_dir = '/home/r/Dense_ori/DenseFusion-2/experiments/eval_result/linemod'
 
 estimator = PoseNet(num_points=num_points, num_obj=num_objects)
 estimator.cuda()
@@ -94,19 +77,21 @@ num_count = [0 for i in range(num_objects)]
 fw = open('{0}/eval_result_logs.txt'.format(output_result_dir), 'w')
 
 for i, data in enumerate(testdataloader, 0):
-    points, choose, img, target, model_points, idx = data
-    if len(points.size()) == 2:
+    points, choose, img, target, model_points, idx, edge, edge_weight = data
+    if len(points.shape) == 2:
         print('No.{0} NOT Pass! Lost detection!'.format(i))
         fw.write('No.{0} NOT Pass! Lost detection!\n'.format(i))
         continue
-    points, choose, img, target, model_points, idx = Variable(points).cuda(), \
-                                                     Variable(choose).cuda(), \
-                                                     Variable(img).cuda(), \
-                                                     Variable(target).cuda(), \
-                                                     Variable(model_points).cuda(), \
-                                                     Variable(idx).cuda()
+    points, choose, img, target, model_points, idx, edge, edge_weight = Variable(points).cuda(), \
+                                                                        Variable(choose).cuda(), \
+                                                                        Variable(img).cuda(), \
+                                                                        Variable(target).cuda(), \
+                                                                        Variable(model_points).cuda(), \
+                                                                        Variable(idx).cuda(), \
+                                                                        Variable(edge).cuda(), \
+                                                                        Variable(edge_weight).cuda()
     ###############################################################下面可直接套用，注意一下输出即可##############################
-    pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
+    pred_r, pred_t, pred_c, emb, pred_edge = estimator(img, points, choose, idx)
     pred_r = pred_r / torch.norm(pred_r, dim=2).view(1, num_points, 1)
     pred_c = pred_c.view(bs, num_points)
     how_max, which_max = torch.max(pred_c, 1)
